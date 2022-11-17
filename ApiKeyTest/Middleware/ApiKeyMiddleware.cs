@@ -1,37 +1,39 @@
-﻿using Microsoft.Net.Http.Headers;
-using System.Net.Http.Headers;
-
-namespace ApiKeyTest.Middleware
+﻿namespace ApiKeyTest.Middleware
 {
+    /// <summary>
+    /// API Key authorization middleware
+    /// </summary>
+    /// <remarks>
+    /// Based on example from
+    /// https://www.c-sharpcorner.com/article/using-api-key-authentication-to-secure-asp-net-core-web-api/
+    /// </remarks>
     public class ApiKeyMiddleware
     {
         private readonly RequestDelegate _next;
-        public ApiKeyMiddleware(RequestDelegate next)
-        {
-            _next = next;
-        }
+        private const string APIKEY = "XApiKey";
 
-        public async Task Invoke(HttpContext context)
-        {
+        public ApiKeyMiddleware(RequestDelegate next) => _next = next;
 
-            IHeaderDictionary headersDictionary = context.Request.Headers;
-            
-            // GetTypedHeaders extension method provides strongly typed access to many headers
-            // For known header, knownheaderValues has 1 item and knownheaderValue is the value
-            // Obtain strongly typed header class in ASP.NET Core using AuthenticationHeaderValue.Parse
-            
-            var authenticationHeaderValue = AuthenticationHeaderValue.Parse(headersDictionary[HeaderNames.Authorization]);
-            
-            if (!(authenticationHeaderValue.Scheme == ApiKeyValues.ApplicationKeyAuthenticationScheme &&
-                ApiKeyValues.ApplicationKeyValue == new Guid(authenticationHeaderValue.Parameter)))
+        public async Task InvokeAsync(HttpContext context)
+        {
+            if (!context.Request.Headers.TryGetValue(APIKEY, out var extractedApiKey))
             {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsync("Unauthorized Application");
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsync("Api Key was not provided");
                 return;
             }
+
+            var appSettings = context.RequestServices.GetRequiredService<IConfiguration>();
+            var apiKey = appSettings.GetValue<string>(APIKEY);
             
-            // Call the next delegate/middleware in the pipeline
-            await _next.Invoke(context);
+            if (!apiKey.Equals(extractedApiKey))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsync("Unauthorized client");
+                return;
+            }
+
+            await _next(context);
         }
     }
 }
